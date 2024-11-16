@@ -1,3 +1,4 @@
 pyTelegramBotAPI
 pytube
 python-dotenv
+yt_dlp
