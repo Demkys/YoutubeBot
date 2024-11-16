@@ -1,75 +1,64 @@
 import os
+import telebot
 from pytube import YouTube
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 from dotenv import load_dotenv
+from telebot import types
 
+# Загрузка токена из .env
 load_dotenv()
-
-# Получаем токен из .env
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 
-# Функция для старта
-async def start(update: Update, context):
-    await update.message.reply_text("Привет! Отправь ссылку на YouTube-видео или Shorts.")
+# Инициализация бота
+bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# Функция для обработки сообщений с ссылками
-async def handle_message(update: Update, context):
-    url = update.message.text
+# Команда start
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    bot.reply_to(message, "Привет! Отправь ссылку на YouTube-видео или Shorts.")
+
+# Обработка сообщений с ссылками
+@bot.message_handler(func=lambda message: True)
+def handle_message(message):
+    url = message.text
     if "youtube.com" in url or "youtu.be" in url:
-        await update.message.reply_text("Анализирую ссылку, пожалуйста подождите...")
+        bot.reply_to(message, "Анализирую ссылку, пожалуйста подождите...")
         yt = YouTube(url)
         
         # Создаем инлайн-кнопки с выбором качества
-        keyboard = []
+        markup = types.InlineKeyboardMarkup()
         for stream in yt.streams.filter(progressive=True, file_extension='mp4'):
             quality = f"{stream.resolution} ({round(stream.filesize / 1024 / 1024)} MB)"
-            button = InlineKeyboardButton(quality, callback_data=stream.itag)
-            keyboard.append([button])
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(f"Выберите качество для загрузки видео '{yt.title}'", reply_markup=reply_markup)
-    else:
-        await update.message.reply_text("Пожалуйста, отправьте корректную ссылку на YouTube.")
+            button = types.InlineKeyboardButton(text=quality, callback_data=str(stream.itag))
+            markup.add(button)
 
-# Функция для обработки инлайн-кнопок
-async def button_click(update: Update, context):
-    query = update.callback_query
-    itag = int(query.data)
-    await query.answer()
-    
-    url = query.message.reply_to_message.text
+        bot.send_message(message.chat.id, f"Выберите качество для загрузки видео '{yt.title}'", reply_markup=markup)
+    else:
+        bot.reply_to(message, "Пожалуйста, отправьте корректную ссылку на YouTube.")
+
+# Обработка нажатия на инлайн кнопки
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callback(call):
+    itag = int(call.data)
+    url = call.message.reply_to_message.text
     yt = YouTube(url)
     stream = yt.streams.get_by_itag(itag)
-    
+
     # Статус загрузки
-    await query.edit_message_text(f"Загружаю видео 📥 ({stream.resolution})...")
+    bot.edit_message_text(f"Загружаю видео 📥 ({stream.resolution})...", chat_id=call.message.chat.id, message_id=call.message.message_id)
     
     # Скачиваем видео
     video_file = stream.download()
     
     # Статус отправки
-    await query.edit_message_text("Отправляю видео 📤...")
+    bot.edit_message_text("Отправляю видео 📤...", chat_id=call.message.chat.id, message_id=call.message.message_id)
     
     # Отправка видео в чат
     with open(video_file, 'rb') as file:
-        await context.bot.send_video(chat_id=query.message.chat_id, video=file)
+        bot.send_video(call.message.chat.id, video=file)
 
     # Удаляем файл после отправки
     os.remove(video_file)
 
-# Главная функция запуска
-async def main():
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(CallbackQueryHandler(button_click))
-
-    print("Бот запущен!")
-    await app.run_polling()  # Запуск бота
-
-if __name__ == '__main__':
-    # Убираем asyncio.run() и напрямую вызываем main()
-    import asyncio
-    asyncio.get_event_loop().run_until_complete(main())  # Используем уже существующий цикл событий
+# Запуск бота
+if __name__ == "__main__":
+    bot.polling(none_stop=True, interval=0)
