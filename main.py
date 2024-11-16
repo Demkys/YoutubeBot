@@ -1,82 +1,85 @@
-import os
-import yt_dlp as youtube_dl
 import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+import os
+import time
+from pytube import YouTube
 from dotenv import load_dotenv
-from telebot import types
 
 # Загрузка токена из .env
 load_dotenv()
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-# Инициализация бота
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# Команда start
+# Обработчик команды /start
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, "Привет! Отправь ссылку на YouTube-видео или Shorts.")
+    bot.send_message(
+        message.chat.id,
+        "👋 Привет! Отправь мне ссылку на YouTube видео, и я помогу скачать его. Выбери качество перед загрузкой!"
+    )
 
-# Обработка сообщений с ссылками
-@bot.message_handler(func=lambda message: True)
+# Обработчик сообщений с ссылками на видео
+@bot.message_handler(func=lambda message: "youtube.com" in message.text or "youtu.be" in message.text)
 def handle_message(message):
-    url = message.text
-    if "youtube.com" in url or "youtu.be" in url:
-        bot.reply_to(message, "Анализирую ссылку, пожалуйста подождите...")
-        
-        # Используем yt-dlp для получения информации о видео
-        ydl_opts = {
-            'format': 'bestaudio/bestvideo',
-            'quiet': True,
-            'extractaudio': False,  # Отключаем извлечение аудио
-            'outtmpl': 'downloads/%(id)s.%(ext)s',  # Папка для загрузки
-        }
-        
-        # Информация о видео
-        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(url, download=False)
-            video_title = info_dict.get('title', None)
-            formats = info_dict.get('formats', [])
-            
-            # Создаем инлайн-кнопки с выбором качества
-            markup = types.InlineKeyboardMarkup()
-            for fmt in formats:
-                quality = f"{fmt['format_note']} ({fmt['ext'].upper()})"
-                button = types.InlineKeyboardButton(text=quality, callback_data=fmt['format_id'])
-                markup.add(button)
+    url = message.text.strip()
+    chat_id = message.chat.id
 
-            bot.send_message(message.chat.id, f"Выберите качество для загрузки видео '{video_title}'", reply_markup=markup)
-    else:
-        bot.reply_to(message, "Пожалуйста, отправьте корректную ссылку на YouTube.")
+    bot.send_message(chat_id, "🔄 Загружаю информацию о видео, подожди...")
 
-# Обработка нажатия на инлайн кнопки
+    try:
+        # Получаем объект YouTube
+        yt = YouTube(url)
+        
+        # Создаем инлайн-клавиатуру для выбора качества
+        markup = InlineKeyboardMarkup()
+        
+        for stream in yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution'):
+            btn_text = f"{stream.resolution} ({round(stream.filesize / 1024 / 1024, 2)} MB)"
+            markup.add(InlineKeyboardButton(btn_text, callback_data=f"{stream.itag}|{url}"))
+        
+        # Отправляем сообщение с вариантами качества
+        bot.send_message(chat_id, "Выберите качество для загрузки:", reply_markup=markup)
+
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ Ошибка при получении видео: {e}")
+
+# Обработчик нажатий на инлайн-кнопки
 @bot.callback_query_handler(func=lambda call: True)
-def handle_callback(call):
-    format_id = call.data
-    url = call.message.reply_to_message.text
-    
-    # Используем yt-dlp для скачивания видео
-    ydl_opts = {
-        'format': format_id,
-        'outtmpl': 'downloads/%(id)s.%(ext)s',  # Папка для загрузки
-    }
+def callback_query(call):
+    itag, url = call.data.split('|')
+    chat_id = call.message.chat.id
 
-    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-        info_dict = ydl.extract_info(url, download=True)
-        video_file = ydl.prepare_filename(info_dict)
-    
-    # Статус загрузки
-    bot.edit_message_text(f"Загружаю видео 📥 ({info_dict['title']})...", chat_id=call.message.chat.id, message_id=call.message.message_id)
-    
-    # Статус отправки
-    bot.edit_message_text("Отправляю видео 📤...", chat_id=call.message.chat.id, message_id=call.message.message_id)
-    
-    # Отправка видео в чат
-    with open(video_file, 'rb') as file:
-        bot.send_video(call.message.chat.id, video=file)
+    try:
+        yt = YouTube(url)
+        stream = yt.streams.get_by_itag(itag)
 
-    # Удаляем файл после отправки
-    os.remove(video_file)
+        # Сообщение о начале загрузки
+        bot.send_message(chat_id, "📥 Загружаю видео, подожди немного...")
+
+        start_time = time.time()
+        video_path = stream.download(output_path="downloads/")
+        download_duration = time.time() - start_time
+        download_speed = round(stream.filesize / 1024 / 1024 / download_duration, 2)  # MB/sec
+
+        bot.send_message(chat_id, f"✅ Загрузка завершена. Скорость загрузки: {download_speed} MB/сек")
+        bot.send_message(chat_id, "📤 Отправляю видео...")
+
+        # Отправка видео с расчетом скорости отправки
+        with open(video_path, 'rb') as video_file:
+            send_start_time = time.time()
+            bot.send_video(chat_id, video_file)
+            send_duration = time.time() - send_start_time
+            send_speed = round(stream.filesize / 1024 / 1024 / send_duration, 2)  # MB/sec
+
+        # Уведомление об успешной отправке и скорость
+        bot.send_message(chat_id, f"✅ Видео отправлено! Скорость отправки: {send_speed} MB/сек")
+
+        # Удаление файла после отправки
+        os.remove(video_path)
+
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ Ошибка при отправке видео: {e}")
 
 # Запуск бота
-if __name__ == "__main__":
-    bot.polling(none_stop=True, interval=0)
+bot.polling(none_stop=True)
