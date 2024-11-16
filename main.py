@@ -70,5 +70,6 @@ async def main():
     await app.run_polling()  # Запуск бота
 
 if __name__ == '__main__':
+    # Убираем asyncio.run() и напрямую вызываем main()
     import asyncio
-    asyncio.run(main())  # Используем asyncio.run для запуска основной функции
+    asyncio.get_event_loop().run_until_complete(main())  # Используем уже существующий цикл событий
