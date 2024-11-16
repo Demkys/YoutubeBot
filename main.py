@@ -36,7 +36,7 @@ def handle_message(message):
         ydl_opts = {
             "quiet": True,
             "skip_download": True,
-            "cookiefile": "cookies.txt"
+            "cookiefile": "cookies.txt"  # Убедитесь, что файл cookies.txt в той же папке, что и скрипт
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info_dict = ydl.extract_info(url, download=False)
@@ -80,7 +80,7 @@ def callback_handler(call):
             "merge_output_format": "mp4",  # Объединяем видео и аудио в MP4
             "outtmpl": "downloads/%(title)s.%(ext)s",
             "quiet": True,
-            "cookiefile": "cookies.txt",
+            "cookiefile": "cookies.txt",  # Используем куки для обхода проверки
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
