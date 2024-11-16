@@ -1,5 +1,4 @@
 import os
-import asyncio
 from pytube import YouTube
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters
@@ -68,7 +67,8 @@ async def main():
     app.add_handler(CallbackQueryHandler(button_click))
 
     print("Бот запущен!")
-    await app.run_polling()
+    await app.run_polling()  # Запуск бота
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    import asyncio
+    asyncio.run(main())  # Используем asyncio.run для запуска основной функции
