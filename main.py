@@ -9,7 +9,7 @@ load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# Популярные форматы для выбора
+# Популярные качества
 popular_qualities = ['144p', '360p', '480p', '720p', '1080p']
 
 # Хранилище данных для каждого пользователя
@@ -23,9 +23,7 @@ def create_quality_buttons(available_formats):
     markup = InlineKeyboardMarkup()
     for fmt in available_formats:
         res = fmt.get('format_note')
-        ext = fmt.get('ext', 'mp4')
-        btn_text = f"{res} - {ext}"
-        markup.add(InlineKeyboardButton(btn_text, callback_data=fmt['format_id']))
+        markup.add(InlineKeyboardButton(f"{res} (MP4)", callback_data=fmt['format_id']))
     return markup
 
 @bot.message_handler(func=lambda message: "youtube.com" in message.text or "youtu.be" in message.text)
@@ -45,11 +43,13 @@ def handle_message(message):
             formats = info_dict.get('formats', [])
             title = info_dict.get('title', 'Видео')
 
-        # Фильтруем доступные форматы
+        # Фильтруем доступные форматы (только MP4 и популярные качества)
         available_formats = []
         for fmt in formats:
             res = fmt.get('format_note')
-            if res in popular_qualities and fmt.get('vcodec') != 'none':
+            ext = fmt.get('ext', 'mp4')
+            acodec = fmt.get('acodec', 'none')
+            if res in popular_qualities and ext == 'mp4' and acodec != 'none':
                 available_formats.append(fmt)
 
         if not available_formats:
@@ -76,7 +76,8 @@ def callback_handler(call):
         start_time = time.time()
 
         ydl_opts = {
-            "format": format_id,
+            "format": f"{format_id}+bestaudio/best",
+            "merge_output_format": "mp4",  # Объединяем видео и аудио в MP4
             "outtmpl": "downloads/%(title)s.%(ext)s",
             "quiet": True,
             "cookiefile": "cookies.txt",
