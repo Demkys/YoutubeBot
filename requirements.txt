@@ -1,4 +1,3 @@
-python-telegram-bot
+pyTelegramBotAPI
 pytube
 python-dotenv
-aiofiles
